@@ -4,39 +4,49 @@ import hiber.model.User;
 import org.hibernate.SessionFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
-import javax.persistence.TypedQuery;
+import javax.persistence.EntityNotFoundException;
 import java.util.List;
 
 @Repository
 public class UserDaoImp implements UserDao {
 
-   @Autowired
-   private SessionFactory sessionFactory;
 
-   @Override
-   public void add(User user) {
-      sessionFactory.getCurrentSession().save(user);
-   }
+    private final SessionFactory sessionFactory;
 
-   @Override
-   @SuppressWarnings("unchecked")
-   public List<User> listUsers() {
-      TypedQuery<User> query=sessionFactory.getCurrentSession().createQuery("from User");
-      return query.getResultList();
-   }
+    @Autowired
+    public UserDaoImp(SessionFactory sessionFactory) {
+        this.sessionFactory = sessionFactory;
+    }
 
-   @Override
-   public User getUserByCar(String model, int series){
+    @Transactional
+    @Override
+    public void add(User user) {
+        sessionFactory.getCurrentSession().save(user);
+    }
 
-      TypedQuery<User> query=sessionFactory.getCurrentSession().createQuery("SELECT FROM User u WHERE u.car.model = :model AND u.car.series = :series");
-      query.setParameter("model", model);
-      query.setParameter("series", series);
+    @Transactional(readOnly = true)
+    @Override
+    public List<User> listUsers() {
+        return sessionFactory.getCurrentSession()
+                .createQuery("SELECT DISTINCT u FROM User u JOIN FETCH u.car", User.class)
+                .getResultList();
+    }
 
-      List<User> results=query.getResultList();
-      if (results.isEmpty()){
-         return null;
-      } return results.get(0); //== результат предположительно будет один
-   }
+    @Transactional(readOnly = true)
+    @Override
+    public User getUserByCar(String model, int series) {
+        List<User> users = sessionFactory.getCurrentSession()
+                .createQuery("SELECT DISTINCT u FROM User u JOIN FETCH u.car c WHERE c.model = :model AND c.series = :series", User.class)
+                .setParameter("model", model)
+                .setParameter("series", series)
+                .getResultList();
 
+        if (users.isEmpty()) {
+            throw new EntityNotFoundException("пользователь с указанной моделью и серией автомобиля не найден: " + model + ", " + series);
+        }
+
+        return users.get(0);
+    }
 }
